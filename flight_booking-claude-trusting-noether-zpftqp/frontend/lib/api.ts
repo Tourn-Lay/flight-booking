@@ -1,10 +1,24 @@
 import axios, { AxiosError } from "axios";
 import type { ApiEnvelope } from "@/types";
 import { tokenStorage } from "./storage";
+import { mockAdapter } from "./mock/adapter";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
-export const http = axios.create({ baseURL: API_URL, headers: { "Content-Type": "application/json" } });
+/**
+ * Static demo mode: serves built-in sample data in the browser, no backend or database needed.
+ * ON by default when NEXT_PUBLIC_API_URL is not set (e.g. a plain Vercel deploy).
+ * Force it with NEXT_PUBLIC_USE_MOCK=true / turn it off with NEXT_PUBLIC_USE_MOCK=false.
+ */
+export const MOCK_ENABLED =
+  process.env.NEXT_PUBLIC_USE_MOCK === "true" ||
+  (process.env.NEXT_PUBLIC_USE_MOCK !== "false" && !process.env.NEXT_PUBLIC_API_URL);
+
+export const http = axios.create({
+  baseURL: API_URL,
+  headers: { "Content-Type": "application/json" },
+  ...(MOCK_ENABLED ? { adapter: mockAdapter } : {}),
+});
 
 /** Error thrown for every failed API call, carrying the backend's message and field errors. */
 export class ApiError extends Error {
@@ -30,7 +44,10 @@ async function refreshAccessToken(): Promise<string | null> {
   const refresh = tokenStorage.getRefresh();
   if (!refresh) return null;
   try {
-    const res = await axios.post<ApiEnvelope<{ access: string }>>(`${API_URL}/auth/refresh/`, { refresh });
+    const res = await (MOCK_ENABLED ? http : axios).post<ApiEnvelope<{ access: string }>>(
+      MOCK_ENABLED ? "/auth/refresh/" : `${API_URL}/auth/refresh/`,
+      { refresh },
+    );
     const access = res.data.data.access;
     tokenStorage.set(access);
     return access;

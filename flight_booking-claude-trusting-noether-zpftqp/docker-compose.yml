@@ -1,0 +1,58 @@
+# Flight Booking Management System - run everything with:  docker compose up --build
+services:
+  db:
+    image: mysql:8.0
+    container_name: flight_db
+    restart: unless-stopped
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql # persistent data
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  backend:
+    build: ./backend
+    container_name: flight_backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_HOST: db # inside Docker the database is reached by its service name, not localhost
+      DB_PORT: "3306"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app # Django auto-reloads when source changes
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    container_name: flight_frontend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      WATCHPACK_POLLING: "true" # reliable hot reload on bind mounts (Windows / macOS)
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app # Next.js hot reload
+      - /app/node_modules # keep the image's installed dependencies
+      - /app/.next
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:
